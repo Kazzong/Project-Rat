@@ -18,6 +18,10 @@ int16_t imuGyroY = 0;
 uint16_t tofDistanceLeftMm = 0;
 uint16_t tofDistanceRightMm = 0;
 uint16_t tofDistanceMm = 0;
+uint8_t imuMlResult = 0;
+bool imuMlValid = false;
+bool imuQvarContact = false;
+bool imuQvarValid = false;
 FusedMotion fusedMotion = {0.0f, 0.0f, 0.0f, 0.0f, false};
 
 void setupHardware();
@@ -48,10 +52,25 @@ void setupHardware() {
     Serial.println(F("IMU initialization failed."));
   } else {
     Serial.println(F("IMU initialized."));
+
+    bool qvarOk = lsm6dsv16x.configureQvar();
+    bool mlOk = lsm6dsv16x.configureMl();
+
+    if (!qvarOk) {
+      Serial.println(F("IMU Qvar configuration unavailable."));
+    } else {
+      Serial.println(F("IMU Qvar configured."));
+    }
+
+    if (!mlOk) {
+      Serial.println(F("IMU ML configuration unavailable."));
+    } else {
+      Serial.println(F("IMU ML configured."));
+    }
   }
 
-  bool icu10201LeftOk = icu10201Left.begin(TOF_LEFT_ID);
-  bool icu10201RightOk = icu10201Right.begin(TOF_RIGHT_ID);
+  bool icu10201LeftOk = icu10201Left.begin(Wire, TOF_LEFT_ID);
+  bool icu10201RightOk = icu10201Right.begin(Wire, TOF_RIGHT_ID);
 
   if (!icu10201LeftOk || !icu10201RightOk) {
     Serial.println(F("ToF initialization failed. Using stub sensor data."));
@@ -67,6 +86,9 @@ void readSensors() {
   if (!lsm6dsv16x.readXY(imuAccelX, imuAccelY, imuGyroX, imuGyroY)) {
     Serial.println(F("IMU read failed."));
   }
+
+  imuQvarValid = lsm6dsv16x.readQvarState(imuQvarContact);
+  imuMlValid = lsm6dsv16x.readMlState(imuMlResult);
 
   bool haveLeft = icu10201Left.readDistance(tofDistanceLeftMm);
   bool haveRight = icu10201Right.readDistance(tofDistanceRightMm);
@@ -88,6 +110,18 @@ void readSensors() {
                  tofDistanceLeftMm,
                  tofDistanceRightMm,
                  fusedMotion);
+
+  if (imuQvarValid && !imuQvarContact) {
+    fusedMotion.dx = 0.0f;
+    fusedMotion.dy = 0.0f;
+    fusedMotion.atRest = true;
+  }
+
+  if (imuMlValid && imuMlResult == 0) {
+    fusedMotion.dx = 0.0f;
+    fusedMotion.dy = 0.0f;
+    fusedMotion.atRest = true;
+  }
 }
 
 void updateHID() {
@@ -121,5 +155,21 @@ void reportStatus() {
   Serial.print(F(" mm, tilt: "));
   Serial.print(fusedMotion.surfaceTilt);
   Serial.print(F(" deg, atRest: "));
-  Serial.println(fusedMotion.atRest ? F("yes") : F("no"));
+  Serial.print(fusedMotion.atRest ? F("yes") : F("no"));
+
+  Serial.print(F(" IMU Qvar: "));
+  if (imuQvarValid) {
+    Serial.print(imuQvarContact ? F("contact") : F("no contact"));
+  } else {
+    Serial.print(F("unknown"));
+  }
+
+  Serial.print(F(" ML: "));
+  if (imuMlValid) {
+    Serial.print(imuMlResult);
+  } else {
+    Serial.print(F("unknown"));
+  }
+
+  Serial.println();
 }
