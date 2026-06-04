@@ -7,7 +7,7 @@ An innovative computer mouse prototype featuring advanced sensor technology and 
 Project Rat is a next-generation mouse design that combines:
 
 - **IMU Sensor (6-DOF)** - For precise motion tracking and acceleration measurement
-- **Acoustic Time-of-Flight Sensors** - For contactless surface tracking and cursor positioning
+- **Piezo Vibration Strip Sensor** - For texture and surface topology sensing
 - **Haptic Scroll Strip** - Tactile feedback-enabled scroll input replacing traditional scroll wheels
 
 ## Development Status
@@ -20,7 +20,7 @@ This repository contains the firmware and driver code for the **proof-of-concept
 |-----------|--------------|---------------|
 | Microcontroller | PJRC Teensy 4.1 | *Custom SoC (TBD)* |
 | IMU | SparkFun LSM6DSV16X | *High-precision industrial IMU* |
-| ToF Sensor | TDK InvenSense EV_MOD_ICU-10201-00 (x2) | *Integrated custom sensor* |
+| Surface Sensor | Piezo vibration strip element | *Integrated custom sensor* |
 | Haptic Strip | *To be selected* | *Custom haptic actuator* |
 | Form Factor | Development board | *Ergonomic mouse form* |
 
@@ -29,7 +29,7 @@ This repository contains the firmware and driver code for the **proof-of-concept
 ## Key Features
 
 - High-precision 6-DOF motion tracking (IMU)
-- Dual acoustic ToF sensors for robust surface tracking and height measurement
+- Piezo vibration strip sensor for texture and surface topology sensing
 - Haptic feedback for scroll interactions
 - Native USB HID support via Teensy 4.1
 - Low-latency sensor fusion and gesture recognition
@@ -41,7 +41,7 @@ This repository contains the firmware and driver code for the **proof-of-concept
 |-----------|------------|----------|--------|
 | Microcontroller | PJRC Teensy 4.1 | 1 | ✅ |
 | IMU Sensor | SparkFun LSM6DSV16X (Qwiic) | 1 | ✅ |
-| ToF Sensor | TDK InvenSense EV_MOD_ICU-10201-00 | 2 | ✅ |
+| Surface Sensor | Piezo vibration strip element | 1 | ✅ |
 | Haptic Strip | *To be selected* | 1 | 🔄 |
 | Haptic Driver | *To be selected* | 1 | 🔄 |
 | Supporting Components | Resistors, capacitors, connectors | Various | 🔄 |
@@ -82,10 +82,10 @@ Project-Rat/
 
 - PJRC Teensy 4.1 board
 - SparkFun LSM6DSV16X (Qwiic)
-- TDK InvenSense EV_MOD_ICU-10201-00 (x2)
+- Piezo vibration strip or piezo sensor element
 - Teensy Loader
 - Arduino IDE or PlatformIO
-- USB Type-C cable for programming
+- USB cable for programming
 
 #### Hardware Setup
 
@@ -93,7 +93,7 @@ See [HARDWARE.md](docs/HARDWARE.md) for complete wiring instructions and pinout 
 
 Quick connections:
 - **IMU (Qwiic)**: Connect to Teensy I2C (pins 18/19)
-- **ToF Sensors**: Connection via SPI or I2C (TBD based on datasheet review)
+- **Piezo strip sensor**: Connect the piezo output to Teensy analog pin A0 and use a high-impedance buffer if needed
 
 #### Building
 
@@ -149,8 +149,8 @@ The proof-of-concept uses a modular architecture designed to be hardware-agnosti
         └────┬───────────┬───────────┬────┘
              │           │           │
         ┌────▼──┐  ┌─────▼──┐  ┌────▼──────┐
-        │  IMU  │  │  ToF   │  │  Haptic   │
-        │Sensor │  │Sensors │  │  Strip    │
+        │  IMU  │  │  Piezo  │  │  Haptic   │
+        │Sensor │  │Strip   │  │  Strip    │
         │(PoC)  │  │ (PoC)  │  │  (TBD)    │
         └───────┘  └────────┘  └───────────┘
 ```
@@ -170,11 +170,10 @@ The proof-of-concept uses a modular architecture designed to be hardware-agnosti
 - **Sample Rate**: Up to 6.66 kHz
 - **Rationale**: Easy prototyping with Qwiic connector, proven accuracy
 
-### ToF Sensors: TDK InvenSense EV_MOD_ICU-10201-00 (x2)
-- **Type**: Acoustic time-of-flight rangefinder
-- **Range**: ~10-2000 mm typical
-- **Frequency**: 100 kHz ultrasonic
-- **Rationale**: Contactless operation, suitable for height/proximity sensing
+### Piezo Strip Sensor: Generic piezo vibration strip
+- **Type**: Passive vibration and surface texture pickup
+- **Interface**: Analog input (A0)
+- **Rationale**: Texture and topology sensing through vibration signatures
 
 ## Documentation
 
@@ -193,7 +192,7 @@ The proof-of-concept uses a modular architecture designed to be hardware-agnosti
 - [ ] Validate basic sensor data
 
 ### Phase 2: Core Firmware (Current Focus)
-- [ ] Sensor drivers (IMU, ToF)
+- [ ] Sensor drivers (IMU, Piezo)
 - [ ] USB HID device stack
 - [ ] Basic cursor tracking
 - [ ] Sensor fusion algorithms

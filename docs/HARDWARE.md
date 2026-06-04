@@ -13,7 +13,7 @@ This guide covers the physical setup and wiring of the **Project Rat proof-of-co
 |-----------|------------|-----|-------|
 | Microcontroller | PJRC Teensy 4.1 | 1 | USB Native support |
 | IMU Sensor | SparkFun LSM6DSV16X (Qwiic) | 1 | 6-DOF motion tracking |
-| ToF Sensor | TDK InvenSense EV_MOD_ICU-10201-00 | 2 | Acoustic rangefinder |
+| Piezo Strip Sensor | Generic piezo vibration strip | 1 | Surface texture sensing |
 | Qwiic Cable | Standard Qwiic | 1 | For IMU connection |
 
 ### Supporting Components
@@ -22,7 +22,7 @@ This guide covers the physical setup and wiring of the **Project Rat proof-of-co
 - Breadboard or custom PCB
 - Jumper wires (22 AWG recommended)
 - 100nF bypass capacitors (for each sensor)
-- Optional: Level shifters if needed for ToF interface
+- Signal conditioning or high-impedance input stage for the piezo strip
 
 ## Teensy 4.1 Pinout
 
@@ -70,55 +70,27 @@ SDA (Blue)   → Pin 18 (I2C SDA)
 SCL (Yellow) → Pin 19 (I2C SCL)
 ```
 
-### ToF Sensors (TDK InvenSense EV_MOD_ICU-10201-00)
+### Piezo Strip Sensor
 
-**⚠️ Important**: The exact pinout and interface (I2C/SPI/UART) must be confirmed from the official datasheet before wiring.
+The piezo strip is a passive vibration pickup used to sense texture and surface topology. It should be connected to a high-impedance analog input on the Teensy and may require buffering, biasing, or signal conditioning to preserve vibration details.
 
-**Preliminary Setup** (assuming SPI interface - **verify with datasheet**):
-
-```
-ToF Sensor #1:
-GND    → GND
-VCC    → 3.3V
-MOSI   → Pin 11 (MOSI)
-MISO   → Pin 12 (MISO)
-SCK    → Pin 13 (SCK)
-CS     → Pin 10 (Chip Select)
-
-ToF Sensor #2 (if using same bus):
-GND    → GND
-VCC    → 3.3V
-MOSI   → Pin 11 (MOSI)
-MISO   → Pin 12 (MISO)
-SCK    → Pin 13 (SCK)
-CS     → Pin 9 (separate CS for sensor #2)
-```
-
-**Alternative** (if I2C interface - **verify with datasheet**):
+**Recommended wiring**:
 
 ```
-ToF Sensor #1:
-GND    → GND
-VCC    → 3.3V
-SDA    → Pin 18 (I2C SDA)
-SCL    → Pin 19 (I2C SCL)
-ADDR   → GND or 3.3V (to set I2C address)
-
-ToF Sensor #2 (I2C with address configuration):
-GND    → GND
-VCC    → 3.3V
-SDA    → Pin 18 (I2C SDA)
-SCL    → Pin 19 (I2C SCL)
-ADDR   → Opposite of Sensor #1
+Piezo strip:
+GND       → GND
+Signal    → Pin A0 (analog input)
 ```
+
+If your piezo strip produces a floating AC waveform, use a bias resistor and a high-impedance amplifier or buffer before the Teensy analog input.
 
 ## Power Considerations
 
 ### Current Draw (PoC)
 - **Teensy 4.1**: ~100 mA typical (at 600 MHz)
 - **LSM6DSV16X**: ~6 mA typical
-- **ToF Sensors (x2)**: ~50-100 mA total (depends on mode)
-- **Total**: ~200-250 mA estimated
+- **Piezo strip sensor**: ~5-20 mA (passive sensor input, amplifier dependent)
+- **Total**: ~130-150 mA estimated
 
 ### Power Supply Options
 

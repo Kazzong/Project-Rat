@@ -6,25 +6,23 @@
 
 #include "config.h"
 #include "imu_lsm6dsv16x.h"
-#include "tof_sensor.h"
+#include "piezo_strip.h"
 #include "sensor_fusion.h"
 
 IMU lsm6dsv16x;
-ToFSensor icu10201Left;
-ToFSensor icu10201Right;
+PiezoStrip piezoStrip(PIEZO_INPUT_PIN);
 
 int16_t imuAccelX = 0;
 int16_t imuAccelY = 0;
 int16_t imuGyroX = 0;
 int16_t imuGyroY = 0;
-uint16_t tofDistanceLeftMm = 0;
-uint16_t tofDistanceRightMm = 0;
-uint16_t tofDistanceMm = 0;
+uint16_t piezoRawValue = 0;
+float piezoMagnitude = 0.0f;
 uint8_t imuMlResult = 0;
 bool imuMlValid = false;
 bool imuQvarContact = false;
 bool imuQvarValid = false;
-FusedMotion fusedMotion = {0.0f, 0.0f, 0.0f, 0.0f, false};
+FusedMotion fusedMotion = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
 
 #if SD_LOG_ENABLE
 File sdLogFile;
@@ -37,7 +35,7 @@ void updateHID();
 void reportStatus();
 #if SD_LOG_ENABLE
 bool initSdLogging();
-void logTofSurfaceSample();
+void logSurfaceSample();
 #endif
 
 void setup() {
@@ -80,14 +78,8 @@ void setupHardware() {
     }
   }
 
-  bool icu10201LeftOk = icu10201Left.begin(Wire, TOF_LEFT_ID);
-  bool icu10201RightOk = icu10201Right.begin(Wire, TOF_RIGHT_ID);
-
-  if (!icu10201LeftOk || !icu10201RightOk) {
-    Serial.println(F("ToF initialization failed. Using stub sensor data."));
-  } else {
-    Serial.println(F("ToF sensors initialized."));
-  }
+  piezoStrip.begin();
+  Serial.println(F("Piezo strip sensor initialized."));
 
 #if SD_LOG_ENABLE
   if (initSdLogging()) {
@@ -109,30 +101,19 @@ void readSensors() {
   imuQvarValid = lsm6dsv16x.readQvarState(imuQvarContact);
   imuMlValid = lsm6dsv16x.readMlState(imuMlResult);
 
-  bool haveLeft = icu10201Left.readDistance(tofDistanceLeftMm);
-  bool haveRight = icu10201Right.readDistance(tofDistanceRightMm);
-
-  if (haveLeft && haveRight) {
-    tofDistanceMm = (uint16_t)((tofDistanceLeftMm + tofDistanceRightMm) / 2);
-  } else if (haveLeft) {
-    tofDistanceMm = tofDistanceLeftMm;
-  } else if (haveRight) {
-    tofDistanceMm = tofDistanceRightMm;
-  } else {
-    tofDistanceMm = 0;
-  }
+  piezoRawValue = piezoStrip.readRaw();
+  piezoMagnitude = piezoStrip.getMagnitude();
 
   fuseSensorData(imuAccelX,
                  imuAccelY,
                  imuGyroX,
                  imuGyroY,
-                 tofDistanceLeftMm,
-                 tofDistanceRightMm,
+                 piezoMagnitude,
                  fusedMotion);
 
 #if SD_LOG_ENABLE
   if (sdCardAvailable) {
-    logTofSurfaceSample();
+    logSurfaceSample();
   }
 #endif
 
@@ -171,15 +152,13 @@ void reportStatus() {
   Serial.print(F(" / "));
   Serial.println(imuGyroY);
 
-  Serial.print(F("ToF distance (avg): "));
-  Serial.print(tofDistanceMm);
-  Serial.print(F(" mm, left: "));
-  Serial.print(tofDistanceLeftMm);
-  Serial.print(F(" mm, right: "));
-  Serial.print(tofDistanceRightMm);
-  Serial.print(F(" mm, tilt: "));
+  Serial.print(F("Piezo raw: "));
+  Serial.print(piezoRawValue);
+  Serial.print(F(", magnitude: "));
+  Serial.print(piezoMagnitude);
+  Serial.print(F(", texture: "));
   Serial.print(fusedMotion.surfaceTilt);
-  Serial.print(F(" deg, atRest: "));
+  Serial.print(F(", atRest: "));
   Serial.print(fusedMotion.atRest ? F("yes") : F("no"));
 
   Serial.print(F(" IMU Qvar: "));
@@ -219,14 +198,14 @@ bool initSdLogging() {
   }
 
   if (sdLogFile.size() == 0) {
-    sdLogFile.println(F("timestamp_ms,left_mm,right_mm,avg_mm,accel_x,accel_y,gyro_x,gyro_y,qvar_contact,ml_result"));
+    sdLogFile.println(F("timestamp_ms,piezo_raw,piezo_magnitude,accel_x,accel_y,gyro_x,gyro_y,qvar_contact,ml_result"));
   }
 
   sdLogFile.flush();
   return true;
 }
 
-void logTofSurfaceSample() {
+void logSurfaceSample() {
   if (!sdCardAvailable) {
     return;
   }
@@ -238,11 +217,9 @@ void logTofSurfaceSample() {
 
   sdLogFile.print(millis());
   sdLogFile.print(',');
-  sdLogFile.print(tofDistanceLeftMm);
+  sdLogFile.print(piezoRawValue);
   sdLogFile.print(',');
-  sdLogFile.print(tofDistanceRightMm);
-  sdLogFile.print(',');
-  sdLogFile.print(tofDistanceMm);
+  sdLogFile.print(piezoMagnitude);
   sdLogFile.print(',');
   sdLogFile.print(imuAccelX);
   sdLogFile.print(',');

@@ -30,9 +30,9 @@
 #define IMU_MLC_CTRL        0x00
 #define IMU_MLC_STATUS      0x00
 
-#define TOF_LEFT_ID         0
-#define TOF_RIGHT_ID        1
-#define TOF_DISTANCE_REGISTER 0x00
+#define PIEZO_INPUT_PIN     A0
+#define PIEZO_BASELINE_ALPHA 0.025f
+#define PIEZO_LOG_THRESHOLD 16
 
 #define SD_LOG_ENABLE       1
 #define SD_LOG_FILE_NAME    "surface_map.csv"

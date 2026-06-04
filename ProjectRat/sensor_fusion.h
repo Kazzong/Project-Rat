@@ -8,6 +8,7 @@ struct FusedMotion {
   float dy;
   float height;
   float surfaceTilt;
+  float vibrationStrength;
   bool atRest;
 };
 
@@ -15,8 +16,7 @@ void fuseSensorData(int16_t accelX,
                     int16_t accelY,
                     int16_t gyroX,
                     int16_t gyroY,
-                    uint16_t tofLeftMm,
-                    uint16_t tofRightMm,
+                    float vibrationStrength,
                     FusedMotion& outMotion);
 
 #endif // SENSOR_FUSION_H

@@ -104,90 +104,49 @@ START + Address(7-bit) + R + ACK + Data + ACK/NACK + STOP
 
 ---
 
-## Time-of-Flight Sensors: TDK InvenSense EV_MOD_ICU-10201-00 (x2)
+## Piezo Strip Sensor: Generic piezo vibration strip
 
 ### Overview
-Acoustic (ultrasonic) time-of-flight range sensor module for contactless distance measurement. Dual sensors provide stereo triangulation capability.
+Passive vibration pickup for texture and surface topology sensing. The piezo strip is sampled by the Teensy analog input and used to detect surface material, texture, and contact events.
 
 ### Specifications
 
 #### Measurement Capabilities
-- **Sensing Technology**: Acoustic time-of-flight (ToF)
-- **Operating Frequency**: 100 kHz (ultrasonic)
-- **Range**: 
-  - Minimum: ~10 mm
-  - Maximum: ~2000 mm (typical)
-  - Accurate range: 50-1500 mm
-- **Resolution**: ~1-3 mm (depends on surface)
-- **Accuracy**: ±2% of reading (typical) or ±20 mm (whichever is larger)
-- **Measurement Rate**: Up to 100 Hz (configurable)
+- **Sensing Technology**: Passive piezo vibration sensing
+- **Interface**: Analog input (A0)
+- **Sensitivity**: Dependent on amplifier/buffer stage and biasing
+- **Sampling Rate**: Limited by ADC sampling and firmware loop rate
+- **Measurement Output**: Relative vibration magnitude and transient events
 
-#### Directional Characteristics
-- **Beam Pattern**: Approximately conical, ~30° opening angle (TBD)
-- **Typical Working Angle**: ±15° optimal
-- **Frequency Response**: Calibrated for human skin and common mouse pad materials
-
-### Physical Specifications
-- **Module Dimensions**: ~20mm × 15mm × 10mm (estimated)
-- **Weight**: <5g
-- **Connector Type**: [To be confirmed from datasheet]
-- **Mounting**: Mounting holes or adhesive backing (TBD)
+#### Physical Characteristics
+- **Sensor Type**: Flexible piezo strip or piezo film
+- **Typical Size**: 20-100 mm length (customizable)
+- **Weight**: Minimal (<5 g)
+- **Connector Type**: Analog signal output
+- **Mounting**: Adhesive backing or mechanical clamp
 
 ### Electrical Specifications
-- **Operating Voltage**: 3.3V ± 5%
-- **Current Draw**:
-  - Idle: ~5 mA
-  - Active measurement: ~15-25 mA per sensor
-  - Total (2 sensors): ~30-50 mA
-- **Interface**: [To be confirmed - likely SPI, I2C, or UART]
+- **Operating Voltage**: Passive sensor; analog front-end uses 3.3V reference
+- **Current Draw**: Passive sensor only, amplifier/buffer dependent
+- **Interface**: One analog input GPIO, high-impedance stage recommended
 
-### Communication Protocol
-
-**[To be completed after datasheet review]**
-
-Estimated frame format:
-```
-[Header] [Distance Data] [Signal Quality] [Ambient] [Temperature] [Checksum]
-```
+### Signal Conditioning
+- Use a high-impedance amplifier or buffer to preserve the piezo waveform.
+- Add a bias network if the piezo output is AC-coupled.
+- Protect the analog input from large transients with a small series resistor and clamp diodes if needed.
 
 ### Performance Parameters
 
 #### Signal Quality Factors
-- Surface reflectivity: Affects signal strength
-- Temperature: Built-in compensation (TBD)
-- Ambient lighting: Acoustic is immune to optical interference
-- Surface distance: Affects signal return time
+- Surface texture: Determines vibration signature
+- Contact pressure: Modulates signal amplitude
+- Sensor mounting: Affects mechanical coupling and sensitivity
+- Noise: Minimize by using shielded wiring and stable ground
 
 #### Typical Performance
-- **Response Time**: ~5-10 ms per measurement
-- **Jitter**: <5 mm RMS (typical)
-- **Hysteresis**: <10 mm
-
-### Dual Sensor Configuration
-
-With two EV_MOD_ICU-10201-00 sensors:
-
-**Stereo Triangulation**:
-```
-        Mouse Surface
-        ┌─────────┐
-        │  Left  │  Right
-        │ Sensor │ Sensor
-        │   ║      ║
-        │   ▼      ▼
-        └─────────┘
-           │     │
-           └─┬─┬─┘
-             └─┘
-           Distance measurements
-           → Height calculation
-           → Surface normal estimation
-```
-
-**Configuration Strategies**:
-1. **Parallel Setup**: Both sensors pointed downward (redundancy)
-2. **Angled Setup**: Sensors at complementary angles (triangulation)
-3. **Sequential Setup**: Sensors for separate features (left/right tracking)
+- **Response Time**: Nearly instantaneous at the sensor; limited by ADC sampling
+- **Resolution**: Depends on ADC resolution and sensor conditioning
+- **Repeatability**: Best with a stable mounting and consistent bias network
 
 ### Sensor Fusion with IMU
 
@@ -198,11 +157,36 @@ IMU (6-DOF):
   - X/Y acceleration and rotation rates only
   - Relative motion
 
-ToF (dual):
-  - Z-axis / height measurement (absolute reference)
-  - Surface proximity and contact detection
-  - Gesture detection (rapid height changes)
+Piezo strip:
+  - Surface texture and vibration magnitude
+  - Contact and texture event detection
+  - Topological signatures for surface mapping
 ```
+
+### Calibration Procedures
+
+#### Factory Calibration
+- Baseline voltage offset
+- Bias network calibration
+- Sensitivity scaling factors
+
+#### User Calibration (On-Device)
+- Noise floor estimation
+- Surface texture normalization
+- Signal amplitude threshold tuning
+
+### Operating Ranges
+
+| Parameter | Min | Typ | Max | Unit |
+|-----------|-----|-----|-----|------|
+| Operating Temp | -10 | 25 | 60 | °C |
+| Storage Temp | -20 | 25 | 85 | °C |
+| Humidity | 0 | 50 | 95 | %RH |
+| Supply Voltage | 3.135 | 3.3 | 3.465 | V |
+
+---
+
+## Haptic Scroll Strip (To Be Selected)
 
 ### Calibration Procedures
 
@@ -285,14 +269,14 @@ Power On:
 ```
 
 ### Noise and EMI Considerations
-- Acoustic sensors: Sensitive to electronic noise on power rails
+- Piezo sensors: Sensitive to mechanical noise and microphonic coupling
 - Digital communication: Twisted pair recommended for I2C/SPI
 - Grounding: Star ground configuration preferred
 - Filtering: 100nF bypass capacitors on all power inputs
 
 ### Thermal Management
 - Operating temperature range: -10°C to +60°C
-- Thermal drift compensation for ToF sensors
+- Drift compensation for piezo baseline changes
 - User warning if temperature exceeds safe operating range
 
 ---
@@ -315,15 +299,15 @@ Power On:
 - [ ] No data dropout over 1-hour test
 - [ ] Temperature measurement verified
 
-### ToF Testing Checklist
-- [ ] Serial/SPI communication verified
-- [ ] Distance measurement within spec
-- [ ] Signal quality stable over time
-- [ ] Ambient measurements consistent
-- [ ] Dual sensor synchronization verified
+### Piezo Strip Testing Checklist
+- [ ] Analog input signal verified
+- [ ] Vibration magnitude responds to surface texture
+- [ ] Signal conditioning stable over time
+- [ ] Baseline noise floor consistent
+- [ ] Event detection reliable during motion
 
 ### Integration Testing
-- [ ] IMU + ToF data fusion works
+- [ ] IMU + piezo data fusion works
 - [ ] Sensor data latency acceptable (<10ms)
 - [ ] No I2C/SPI bus conflicts
 - [ ] Power consumption within budget
