@@ -56,10 +56,8 @@
 struct LSM6DSV16X_Data {
     int16_t accel_x;        // Acceleration X-axis (LSBs)
     int16_t accel_y;        // Acceleration Y-axis (LSBs)
-    int16_t accel_z;        // Acceleration Z-axis (LSBs)
     int16_t gyro_x;         // Angular velocity X-axis (LSBs)
     int16_t gyro_y;         // Angular velocity Y-axis (LSBs)
-    int16_t gyro_z;         // Angular velocity Z-axis (LSBs)
     int8_t temperature;     // Temperature (°C, from 25°C offset)
 };
 ```
@@ -97,14 +95,10 @@ START + Address(7-bit) + R + ACK + Data + ACK/NACK + STOP
 | OUTX_H_A | 0x29 | Accel X-axis MSB |
 | OUTY_L_A | 0x2A | Accel Y-axis LSB |
 | OUTY_H_A | 0x2B | Accel Y-axis MSB |
-| OUTZ_L_A | 0x2C | Accel Z-axis LSB |
-| OUTZ_H_A | 0x2D | Accel Z-axis MSB |
 | OUTX_L_G | 0x22 | Gyro X-axis LSB |
 | OUTX_H_G | 0x23 | Gyro X-axis MSB |
 | OUTY_L_G | 0x24 | Gyro Y-axis LSB |
 | OUTY_H_G | 0x25 | Gyro Y-axis MSB |
-| OUTZ_L_G | 0x26 | Gyro Z-axis LSB |
-| OUTZ_H_G | 0x27 | Gyro Z-axis MSB |
 | OUT_TEMP_L | 0x20 | Temperature LSB |
 | OUT_TEMP_H | 0x21 | Temperature MSB |
 
@@ -201,10 +195,11 @@ Combined sensor data:
 ```
 IMU (6-DOF):
   - High-frequency motion tracking (relative positioning)
-  - Acceleration and rotation rates
-  
+  - X/Y acceleration and rotation rates only
+  - Relative motion
+
 ToF (dual):
-  - Absolute height measurement (reference point)
+  - Z-axis / height measurement (absolute reference)
   - Surface proximity and contact detection
   - Gesture detection (rapid height changes)
 ```
