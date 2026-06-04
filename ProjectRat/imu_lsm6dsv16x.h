@@ -20,4 +20,6 @@ private:
   bool readRegister16(uint8_t lowReg, int16_t& value);
 };
 
+using IMU = LSM6DSV16X;
+
 #endif // IMU_LSM6DSV16X_H

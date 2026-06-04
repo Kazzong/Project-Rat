@@ -7,16 +7,18 @@
 #include "tof_sensor.h"
 #include "sensor_fusion.h"
 
-LSM6DSV16X imu;
-ToFSensor tofLeft;
-ToFSensor tofRight;
+IMU lsm6dsv16x;
+ToFSensor icu10201Left;
+ToFSensor icu10201Right;
 
 int16_t imuAccelX = 0;
 int16_t imuAccelY = 0;
 int16_t imuGyroX = 0;
 int16_t imuGyroY = 0;
+uint16_t tofDistanceLeftMm = 0;
+uint16_t tofDistanceRightMm = 0;
 uint16_t tofDistanceMm = 0;
-FusedMotion fusedMotion = {0.0f, 0.0f, 0.0f};
+FusedMotion fusedMotion = {0.0f, 0.0f, 0.0f, 0.0f, false};
 
 void setupHardware();
 void readSensors();
@@ -41,17 +43,17 @@ void loop() {
 }
 
 void setupHardware() {
-  bool imuOk = imu.begin(Wire, IMU_I2C_ADDR);
+  bool imuOk = lsm6dsv16x.begin(Wire, IMU_I2C_ADDR);
   if (!imuOk) {
     Serial.println(F("IMU initialization failed."));
   } else {
     Serial.println(F("IMU initialized."));
   }
 
-  bool tofLeftOk = tofLeft.begin(TOF_LEFT_ID);
-  bool tofRightOk = tofRight.begin(TOF_RIGHT_ID);
+  bool icu10201LeftOk = icu10201Left.begin(TOF_LEFT_ID);
+  bool icu10201RightOk = icu10201Right.begin(TOF_RIGHT_ID);
 
-  if (!tofLeftOk || !tofRightOk) {
+  if (!icu10201LeftOk || !icu10201RightOk) {
     Serial.println(F("ToF initialization failed. Using stub sensor data."));
   } else {
     Serial.println(F("ToF sensors initialized."));
@@ -62,26 +64,30 @@ void setupHardware() {
 }
 
 void readSensors() {
-  if (!imu.readXY(imuAccelX, imuAccelY, imuGyroX, imuGyroY)) {
+  if (!lsm6dsv16x.readXY(imuAccelX, imuAccelY, imuGyroX, imuGyroY)) {
     Serial.println(F("IMU read failed."));
   }
 
-  uint16_t leftDistance = 0;
-  uint16_t rightDistance = 0;
-  bool haveLeft = tofLeft.readDistance(leftDistance);
-  bool haveRight = tofRight.readDistance(rightDistance);
+  bool haveLeft = icu10201Left.readDistance(tofDistanceLeftMm);
+  bool haveRight = icu10201Right.readDistance(tofDistanceRightMm);
 
   if (haveLeft && haveRight) {
-    tofDistanceMm = (uint16_t)((leftDistance + rightDistance) / 2);
+    tofDistanceMm = (uint16_t)((tofDistanceLeftMm + tofDistanceRightMm) / 2);
   } else if (haveLeft) {
-    tofDistanceMm = leftDistance;
+    tofDistanceMm = tofDistanceLeftMm;
   } else if (haveRight) {
-    tofDistanceMm = rightDistance;
+    tofDistanceMm = tofDistanceRightMm;
   } else {
     tofDistanceMm = 0;
   }
 
-  fuseSensorData(imuAccelX, imuAccelY, imuGyroX, imuGyroY, tofDistanceMm, fusedMotion);
+  fuseSensorData(imuAccelX,
+                 imuAccelY,
+                 imuGyroX,
+                 imuGyroY,
+                 tofDistanceLeftMm,
+                 tofDistanceRightMm,
+                 fusedMotion);
 }
 
 void updateHID() {
@@ -106,7 +112,14 @@ void reportStatus() {
   Serial.print(F(" / "));
   Serial.println(imuGyroY);
 
-  Serial.print(F("ToF distance: "));
+  Serial.print(F("ToF distance (avg): "));
   Serial.print(tofDistanceMm);
-  Serial.println(F(" mm"));
+  Serial.print(F(" mm, left: "));
+  Serial.print(tofDistanceLeftMm);
+  Serial.print(F(" mm, right: "));
+  Serial.print(tofDistanceRightMm);
+  Serial.print(F(" mm, tilt: "));
+  Serial.print(fusedMotion.surfaceTilt);
+  Serial.print(F(" deg, atRest: "));
+  Serial.println(fusedMotion.atRest ? F("yes") : F("no"));
 }
