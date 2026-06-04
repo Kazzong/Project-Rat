@@ -128,8 +128,8 @@ Teensy   │ SDA (Pin 18)    │◄────────┬── LSM6DSV16X 
          └─────────────────┘      │   │
                                   │   │
               I2C Pull-ups:        │   │
-              ┌─ 4.7kΩ ─ 3.3V ────┴────┤ ToF Sensor SDA
-              └─ 4.7kΩ ─ 3.3V ───────── ToF Sensor SCL
+              ┌─ 4.7kΩ ─ 3.3V ────┴────┤ LSM6DSV16X SDA
+              └─ 4.7kΩ ─ 3.3V ───────── LSM6DSV16X SCL
 ```
 
 **Note**: Pull-up resistors may already be on the sensor breakout boards.
@@ -189,9 +189,9 @@ Below is a simplified schematic layout:
          │                    │
     ┌────▼────┐         ┌─────▼─────┐
     │          │         │           │
-    │LSM6DSV16X│         │ ToF Sens. │
-    │  (Qwiic) │         │  (x2)     │
-    │          │         │           │
+    │LSM6DSV16X│         │ Piezo     │
+    │  (Qwiic) │         │  Sensor   │
+    │          │         │  (A0)     │
     └──────────┘         └───────────┘
 ```
 
@@ -199,10 +199,10 @@ Below is a simplified schematic layout:
 
 - [ ] Teensy 4.1 board obtained
 - [ ] SparkFun LSM6DSV16X sensor obtained
-- [ ] TDK InvenSense EV_MOD_ICU-10201-00 sensors (x2) obtained
-- [ ] Teensy connected to computer via USB Type-C
+- [ ] DFRobot SEN0209 or similar piezo sensor obtained
+- [ ] Teensy connected to computer via USB micro-B
 - [ ] IMU sensor wired to Teensy I2C pins
-- [ ] ToF sensors wired according to datasheet
+- [ ] Piezo sensor wired to A0 with proper buffering if needed
 - [ ] Bypass capacitors installed
 - [ ] I2C bus scan test passed
 - [ ] Power supply verified (3.3V stable)
@@ -228,11 +228,11 @@ Below is a simplified schematic layout:
 - Verify regulator output
 - Check for shorts
 
-### ToF Sensor Communication
-- Confirm interface (SPI vs I2C) from datasheet
-- Verify CS pin pulled high (if SPI)
-- Check for address conflicts (if I2C)
-- Confirm sensor is powered
+### Piezo Sensor Input
+- Confirm piezo output is connected to A0
+- Use a high-impedance buffer if the sensor output is weak
+- Verify the analog pin is protected from large transients
+- Check the sensor reference/bias network if using AC-coupled sensing
 
 ## Resources
 
