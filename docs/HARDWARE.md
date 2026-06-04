@@ -17,7 +17,8 @@ This guide covers the physical setup and wiring of the **Project Rat proof-of-co
 | Qwiic Cable | Standard Qwiic | 1 | For IMU connection |
 
 ### Supporting Components
-- USB Type-C cable (for programming and power)
+- USB micro-B cable (for programming and power)
+- MicroSD card (for surface map logging)
 - Breadboard or custom PCB
 - Jumper wires (22 AWG recommended)
 - 100nF bypass capacitors (for each sensor)
@@ -122,7 +123,7 @@ ADDR   → Opposite of Sensor #1
 ### Power Supply Options
 
 1. **USB Power** (Recommended for PoC): 
-   - Connect Teensy via USB Type-C
+   - Connect Teensy via USB micro-B
    - Provides 500 mA @ 5V (negotiable)
    - Simplest for development and testing
 

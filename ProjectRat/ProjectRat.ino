@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <SPI.h>
+#include <SD.h>
 #include <usb_mouse.h>
 
 #include "config.h"
@@ -24,10 +26,19 @@ bool imuQvarContact = false;
 bool imuQvarValid = false;
 FusedMotion fusedMotion = {0.0f, 0.0f, 0.0f, 0.0f, false};
 
+#if SD_LOG_ENABLE
+File sdLogFile;
+bool sdCardAvailable = false;
+#endif
+
 void setupHardware();
 void readSensors();
 void updateHID();
 void reportStatus();
+#if SD_LOG_ENABLE
+bool initSdLogging();
+void logTofSurfaceSample();
+#endif
 
 void setup() {
   Serial.begin(115200);
@@ -78,6 +89,14 @@ void setupHardware() {
     Serial.println(F("ToF sensors initialized."));
   }
 
+#if SD_LOG_ENABLE
+  if (initSdLogging()) {
+    Serial.println(F("SD logging initialized."));
+  } else {
+    Serial.println(F("SD logging failed."));
+  }
+#endif
+
   readSensors();
   reportStatus();
 }
@@ -110,6 +129,12 @@ void readSensors() {
                  tofDistanceLeftMm,
                  tofDistanceRightMm,
                  fusedMotion);
+
+#if SD_LOG_ENABLE
+  if (sdCardAvailable) {
+    logTofSurfaceSample();
+  }
+#endif
 
   if (imuQvarValid && !imuQvarContact) {
     fusedMotion.dx = 0.0f;
@@ -173,3 +198,64 @@ void reportStatus() {
 
   Serial.println();
 }
+
+#if SD_LOG_ENABLE
+bool initSdLogging() {
+#ifdef BUILTIN_SDCARD
+  const int sdCsPin = BUILTIN_SDCARD;
+#else
+  const int sdCsPin = 10;
+#endif
+
+  if (!SD.begin(sdCsPin)) {
+    return false;
+  }
+
+  sdCardAvailable = true;
+  sdLogFile = SD.open(SD_LOG_FILE_NAME, FILE_WRITE);
+  if (!sdLogFile) {
+    sdCardAvailable = false;
+    return false;
+  }
+
+  if (sdLogFile.size() == 0) {
+    sdLogFile.println(F("timestamp_ms,left_mm,right_mm,avg_mm,accel_x,accel_y,gyro_x,gyro_y,qvar_contact,ml_result"));
+  }
+
+  sdLogFile.flush();
+  return true;
+}
+
+void logTofSurfaceSample() {
+  if (!sdCardAvailable) {
+    return;
+  }
+
+  if (!sdLogFile) {
+    sdCardAvailable = false;
+    return;
+  }
+
+  sdLogFile.print(millis());
+  sdLogFile.print(',');
+  sdLogFile.print(tofDistanceLeftMm);
+  sdLogFile.print(',');
+  sdLogFile.print(tofDistanceRightMm);
+  sdLogFile.print(',');
+  sdLogFile.print(tofDistanceMm);
+  sdLogFile.print(',');
+  sdLogFile.print(imuAccelX);
+  sdLogFile.print(',');
+  sdLogFile.print(imuAccelY);
+  sdLogFile.print(',');
+  sdLogFile.print(imuGyroX);
+  sdLogFile.print(',');
+  sdLogFile.print(imuGyroY);
+  sdLogFile.print(',');
+  sdLogFile.print(imuQvarValid ? (imuQvarContact ? 1 : 0) : 0);
+  sdLogFile.print(',');
+  sdLogFile.println(imuMlValid ? imuMlResult : 255);
+
+  sdLogFile.flush();
+}
+#endif

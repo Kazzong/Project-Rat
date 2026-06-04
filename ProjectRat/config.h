@@ -34,6 +34,9 @@
 #define TOF_RIGHT_ID        1
 #define TOF_DISTANCE_REGISTER 0x00
 
+#define SD_LOG_ENABLE       1
+#define SD_LOG_FILE_NAME    "surface_map.csv"
+
 #define MAIN_LOOP_DELAY_MS  20
 
 #endif // PROJECT_RAT_CONFIG_H
