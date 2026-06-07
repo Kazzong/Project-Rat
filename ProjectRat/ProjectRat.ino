@@ -8,6 +8,7 @@
 #include "imu_lsm6dsv16x.h"
 #include "piezo_strip.h"
 #include "sensor_fusion.h"
+#include "buttons.h"          // --- BUTTON SUBSYSTEM ---
 
 IMU lsm6dsv16x;
 PiezoStrip piezoStrip(PIEZO_INPUT_PIN);
@@ -51,6 +52,9 @@ void setup() {
 
 void loop() {
   readSensors();
+
+  Buttons::update();        // --- BUTTON SUBSYSTEM ---
+
   updateHID();
   delay(MAIN_LOOP_DELAY_MS);
 }
@@ -88,6 +92,8 @@ void setupHardware() {
     Serial.println(F("SD logging failed."));
   }
 #endif
+
+  Buttons::begin();         // --- BUTTON SUBSYSTEM ---
 
   readSensors();
   reportStatus();
@@ -137,6 +143,22 @@ void updateHID() {
 
   if (xMove != 0 || yMove != 0) {
     usb_mouse_move((int8_t)xMove, (int8_t)yMove, 0, 0);
+  }
+
+  // --- BUTTON SUBSYSTEM: HID OUTPUT ---
+  ButtonEvent aEvent = Buttons::getEvent(ButtonId::A);
+  ButtonEvent bEvent = Buttons::getEvent(ButtonId::B);
+
+  if (aEvent == ButtonEvent::Pressed) {
+    usb_mouse_press(MOUSE_LEFT);
+  } else if (aEvent == ButtonEvent::Released) {
+    usb_mouse_release(MOUSE_LEFT);
+  }
+
+  if (bEvent == ButtonEvent::Pressed) {
+    usb_mouse_press(MOUSE_RIGHT);
+  } else if (bEvent == ButtonEvent::Released) {
+    usb_mouse_release(MOUSE_RIGHT);
   }
 #endif
 }
