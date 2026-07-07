@@ -5,7 +5,8 @@
 #include <Wire.h>
 
 // NOTE: IMU_I2C_ADDR, IMU_WHO_AM_I, IMU_CTRL1_XL, IMU_CTRL2_G, IMU_CTRL3_C,
-// IMU_OUTX_L_G, IMU_QVAR_STATUS, IMU_MLC_STATUS are defined in config.h — do not redefine here.
+// IMU_OUTX_L_G, IMU_OUT_TEMP_L, IMU_QVAR_STATUS, IMU_MLC_STATUS are defined
+// in config.h — do not redefine here.
 
 class LSM6DSV16X {
 public:
@@ -26,6 +27,13 @@ public:
 
   bool readAllPhysical(float& outAxG, float& outAyG, float& outAzG,
                         float& outGxDps, float& outGyDps, float& outGzDps);
+
+  // Onboard die temperature (degC). Sensitivity 256 LSB/degC, 0 LSB = 25 degC.
+  // Added to correlate stationary bias drift against measured temperature
+  // instead of inferring warm-up purely from elapsed run number.
+  static constexpr float TEMP_SENSITIVITY_LSB_PER_C = 256.0f;
+  static constexpr float TEMP_OFFSET_C = 25.0f;
+  bool readTemperatureC(float& outTempC);
 
   // Qvar / MLC — stubbed, not yet implemented (Phase 5 scope)
   bool configureQvar();

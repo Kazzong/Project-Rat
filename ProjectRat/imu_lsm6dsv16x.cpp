@@ -137,6 +137,16 @@ bool LSM6DSV16X::readAllPhysical(float& outAxG, float& outAyG, float& outAzG,
   return true;
 }
 
+bool LSM6DSV16X::readTemperatureC(float& outTempC) {
+  int16_t rawTemp = 0;
+  if (!readRegister16(IMU_OUT_TEMP_L, rawTemp)) {
+    return false;
+  }
+
+  outTempC = TEMP_OFFSET_C + ((float)rawTemp / TEMP_SENSITIVITY_LSB_PER_C);
+  return true;
+}
+
 bool LSM6DSV16X::writeRegister(uint8_t reg, uint8_t value) {
   _wire->beginTransmission(_address);
   _wire->write(reg);

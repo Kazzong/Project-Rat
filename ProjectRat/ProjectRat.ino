@@ -31,7 +31,7 @@ bool driftSummaryFileReady = false;
 #endif
 
 #define DRIFT_TEST_DURATION_MS   30000
-#define DRIFT_TEST_SAMPLE_MS     20   // matches MAIN_LOOP_DELAY_MS
+#define DRIFT_TEST_SAMPLE_MS     20   // nominal target only — actual dt is now measured via micros()
 #define DRIFT_TEST_RUN_COUNT     50    // number of consecutive automated runs
 #define DRIFT_TEST_PAUSE_MS      5000 // pause between consecutive runs
 #define DRIFT_SUMMARY_FILE_NAME  "drift_summary.csv"
@@ -42,6 +42,9 @@ struct DriftResult {
   float stdAx, stdAy, stdAz;
   float meanGx, meanGy, meanGz;
   float stdGx, stdGy, stdGz;
+  float meanTempC;      // mean die temperature over the run (degC)
+  float meanDtMs;        // mean measured sample interval over the run (ms) — diagnostic,
+                         // confirms actual vs. nominal DRIFT_TEST_SAMPLE_MS
   float posXDriftMm, posYDriftMm;
 };
 
@@ -268,20 +271,41 @@ DriftResult runDriftCharacterization(int runNumber) {
   float sumGx = 0, sumGy = 0, sumGz = 0;
   float sumAx2 = 0, sumAy2 = 0, sumAz2 = 0;
   float sumGx2 = 0, sumGy2 = 0, sumGz2 = 0;
+  float sumTempC = 0;
+  int tempSampleCount = 0;
+  float sumDtMs = 0;
 
   float velX = 0, velY = 0;
   float posX = 0, posY = 0;
-  float dt = DRIFT_TEST_SAMPLE_MS / 1000.0f;
 
   unsigned long startTime = millis();
+
+  // Measured-dt integration: dt is now the actual elapsed time between
+  // consecutive successful reads, not the nominal DRIFT_TEST_SAMPLE_MS.
+  // The previous fixed-dt version assumed 20 ms/sample; actual I2C read +
+  // processing overhead measured ~21.4 ms/sample in the first 50-run batch,
+  // which was a ~7% systematic error compounding through the double
+  // integration. This removes that error source.
+  unsigned long lastSampleMicros = micros();
 
   while (millis() - startTime < DRIFT_TEST_DURATION_MS) {
     float ax, ay, az, gx, gy, gz;
     if (lsm6dsv16x.readAllPhysical(ax, ay, az, gx, gy, gz)) {
+      unsigned long nowMicros = micros();
+      float dt = (nowMicros - lastSampleMicros) / 1000000.0f;
+      lastSampleMicros = nowMicros;
+
       sumAx += ax; sumAy += ay; sumAz += az;
       sumGx += gx; sumGy += gy; sumGz += gz;
       sumAx2 += ax * ax; sumAy2 += ay * ay; sumAz2 += az * az;
       sumGx2 += gx * gx; sumGy2 += gy * gy; sumGz2 += gz * gz;
+      sumDtMs += dt * 1000.0f;
+
+      float tempC = 0.0f;
+      if (lsm6dsv16x.readTemperatureC(tempC)) {
+        sumTempC += tempC;
+        tempSampleCount++;
+      }
 
       float axMps2 = ax * LSM6DSV16X::G_TO_MPS2;
       float ayMps2 = ay * LSM6DSV16X::G_TO_MPS2;
@@ -317,6 +341,9 @@ DriftResult runDriftCharacterization(int runNumber) {
   result.stdGy = sqrt(max(0.0f, sumGy2 / sampleCount - result.meanGy * result.meanGy));
   result.stdGz = sqrt(max(0.0f, sumGz2 / sampleCount - result.meanGz * result.meanGz));
 
+  result.meanTempC = (tempSampleCount > 0) ? (sumTempC / tempSampleCount) : NAN;
+  result.meanDtMs = sumDtMs / sampleCount;
+
   result.posXDriftMm = posX * 1000.0f;
   result.posYDriftMm = posY * 1000.0f;
 
@@ -341,9 +368,27 @@ DriftResult runDriftCharacterization(int runNumber) {
   Serial.print(F("Gyro Z: mean=")); Serial.print(result.meanGz, 5);
   Serial.print(F(" dps  std=")); Serial.print(result.stdGz, 5); Serial.println(F(" dps"));
 
+  Serial.print(F("Die temperature: mean="));
+  if (tempSampleCount > 0) {
+    Serial.print(result.meanTempC, 2);
+    Serial.print(F(" degC ("));
+    Serial.print(tempSampleCount);
+    Serial.print(F("/"));
+    Serial.print(sampleCount);
+    Serial.println(F(" reads valid)"));
+  } else {
+    Serial.println(F("unavailable"));
+  }
+
+  Serial.print(F("Measured mean sample interval: "));
+  Serial.print(result.meanDtMs, 3);
+  Serial.print(F(" ms (nominal target: "));
+  Serial.print(DRIFT_TEST_SAMPLE_MS);
+  Serial.println(F(" ms)"));
+
   Serial.print(F("Naive double-integrated drift over "));
   Serial.print(DRIFT_TEST_DURATION_MS / 1000);
-  Serial.println(F("s (gravity-uncompensated, illustrative only):"));
+  Serial.println(F("s (gravity-uncompensated, illustrative only, now using measured dt):"));
   Serial.print(F("  posX drift: ")); Serial.print(result.posXDriftMm, 2); Serial.println(F(" mm"));
   Serial.print(F("  posY drift: ")); Serial.print(result.posYDriftMm, 2); Serial.println(F(" mm"));
 
@@ -429,6 +474,7 @@ bool initDriftSummaryLog() {
     driftSummaryFile.println(F("boot_timestamp_ms,run_number,sample_count,"
                                 "mean_ax_g,std_ax_g,mean_ay_g,std_ay_g,mean_az_g,std_az_g,"
                                 "mean_gx_dps,std_gx_dps,mean_gy_dps,std_gy_dps,mean_gz_dps,std_gz_dps,"
+                                "mean_temp_c,mean_dt_ms,"
                                 "posx_drift_mm,posy_drift_mm"));
   }
 
@@ -460,6 +506,8 @@ void logDriftSummary(int runNumber, const DriftResult& r) {
   driftSummaryFile.print(r.stdGy, 5); driftSummaryFile.print(',');
   driftSummaryFile.print(r.meanGz, 5); driftSummaryFile.print(',');
   driftSummaryFile.print(r.stdGz, 5); driftSummaryFile.print(',');
+  driftSummaryFile.print(r.meanTempC, 2); driftSummaryFile.print(',');
+  driftSummaryFile.print(r.meanDtMs, 3); driftSummaryFile.print(',');
   driftSummaryFile.print(r.posXDriftMm, 2); driftSummaryFile.print(',');
   driftSummaryFile.println(r.posYDriftMm, 2);
 

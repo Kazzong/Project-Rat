@@ -27,6 +27,19 @@
 
 /*
  * ---------------------------------------------------------
+ * IMU output registers (temperature)
+ * ---------------------------------------------------------
+ * OUT_TEMP_L/H:       Low/high bytes for onboard die temperature.
+ *                     Sensitivity 256 LSB/degC, 0 LSB = 25 degC.
+ *                     Added to correlate stationary bias drift
+ *                     against measured die temperature instead of
+ *                     inferring warm-up purely from run number.
+ */
+#define IMU_OUT_TEMP_L      0x20
+#define IMU_OUT_TEMP_H      0x21
+
+/*
+ * ---------------------------------------------------------
  * IMU output registers (accelerometer)
  * ---------------------------------------------------------
  * OUTX/Y/Z_L/H_A:     Low/high bytes for accel X/Y/Z readings.
