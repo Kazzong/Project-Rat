@@ -10,7 +10,7 @@
  * IMU_I2C_ADDR:       The 7-bit I2C address of the IMU.
  * IMU_WHO_AM_I:       Register used to verify the IMU identity.
  */
-#define IMU_I2C_ADDR        0x6A
+#define IMU_I2C_ADDR        0x6B
 #define IMU_WHO_AM_I        0x0F
 
 /*
