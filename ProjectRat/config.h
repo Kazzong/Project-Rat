@@ -78,25 +78,84 @@
 
 /*
  * ---------------------------------------------------------
- * Piezo-film vibration sensor configuration
+ * Motion pipeline notes
  * ---------------------------------------------------------
- * PIEZO_INPUT_PIN:        Analog pin connected to the PVDF strip.
- * PIEZO_BASELINE_ALPHA:   Smoothing factor for baseline tracking.
- * PIEZO_LOG_THRESHOLD:    Minimum vibration magnitude to log.
+ * The two flags formerly here (BYPASS_VIBRATION_INPUT,
+ * BYPASS_REST_GATE) are superseded, not just disabled. The piezo
+ * strip has been removed from fuseSensorData() entirely — it does
+ * not correspond to any real Project RAT hardware (the acoustic feet
+ * discs, switch benders, and scroll-strip actuator are three separate
+ * piezo elements, none of which is this analog pin). Stillness gating
+ * is now structural: see MOTION_GATE_PIN below and the acoustic-first
+ * control flow in readSensors() (ProjectRat.ino).
  */
-#define PIEZO_INPUT_PIN     A0
-#define PIEZO_BASELINE_ALPHA 0.025f
-#define PIEZO_LOG_THRESHOLD 16
+
+/*
+ * ---------------------------------------------------------
+ * Piezo strip — removed
+ * ---------------------------------------------------------
+ * Was: analog pin (PIEZO_INPUT_PIN) feeding a "vibrationStrength"
+ * signal into the fusion path. Removed because it does not
+ * correspond to any real Project RAT hardware — the acoustic feet
+ * discs, switch benders, and scroll-strip actuator are three
+ * separate piezo elements, none of which was this pin. Real
+ * acoustic-based surface mapping will be implemented later, tied to
+ * actual corner-pad hardware rather than this placeholder.
+ */
 
 /*
  * ---------------------------------------------------------
  * SD card logging configuration
  * ---------------------------------------------------------
- * SD_LOG_ENABLE:          1 = enable CSV logging, 0 = disable.
- * SD_LOG_FILE_NAME:       Output file name on SD card.
+ * SD_LOG_ENABLE:          1 = enable SD card init + drift summary
+ *                          CSV logging (drift_summary.csv), 0 = disable.
+ *                          Surface-map logging (was piezo-based) has
+ *                          been removed; real acoustic-based surface
+ *                          mapping will replace it later.
  */
 #define SD_LOG_ENABLE       1
-#define SD_LOG_FILE_NAME    "surface_map.csv"
+
+/*
+ * ---------------------------------------------------------
+ * HID interface enable
+ * ---------------------------------------------------------
+ * MOUSE_INTERFACE is NOT defined here. Teensy's own core
+ * (usb_desc.h) defines it automatically based on the Arduino IDE's
+ * Tools > USB Type board setting (must be a Mouse-capable mode,
+ * e.g. "Keyboard+Mouse+Joystick") — defining it again in this file
+ * conflicts with that and only produces a redefinition warning. The
+ * #ifdef MOUSE_INTERFACE guard in updateHID() (ProjectRat.ino) picks
+ * up the core's definition automatically once that board setting is
+ * correct; nothing here needs to change based on it.
+ */
+
+/*
+ * ---------------------------------------------------------
+ * Drift characterization batch
+ * ---------------------------------------------------------
+ * RUN_DRIFT_BATCH_AT_BOOT:
+ *     1 = runDriftBatch() executes in setup() before loop() ever
+ *         runs — a 50-run, ~38s/run stationary IMU characterization
+ *         (~32 minutes total). Nothing else (gating, buttons, HID
+ *         motion) is reachable until it finishes.
+ *     0 = skipped entirely; setup() proceeds straight to loop() as
+ *         normal.
+ *     Set to 1 only when you specifically want another drift
+ *     characterization run; leave at 0 for all other bench testing
+ *     (motion gate, buttons, HID behavior, etc).
+ */
+#define RUN_DRIFT_BATCH_AT_BOOT  0
+
+/*
+ * ---------------------------------------------------------
+ * Serial status reporting
+ * ---------------------------------------------------------
+ * STATUS_REPORT_INTERVAL_MS:
+ *     How often reportStatus() prints in loop() (milliseconds).
+ *     Decoupled from MAIN_LOOP_DELAY_MS so the serial monitor stays
+ *     readable instead of printing on every ~20ms loop iteration.
+ */
+#define STATUS_REPORT_INTERVAL_MS  250
 
 /*
  * ---------------------------------------------------------
@@ -106,6 +165,56 @@
  *                         Controls IMU polling rate + HID update rate.
  */
 #define MAIN_LOOP_DELAY_MS  20
+
+/*
+ * ---------------------------------------------------------
+ * Motion permit gate (manual stand-in for acoustic stillness)
+ * ---------------------------------------------------------
+ * MOTION_GATE_PIN:
+ *     A third momentary switch, separate from BUTTON_A/B. Held down
+ *     (active-low) = mouse has moved / motion permitted; released =
+ *     mouse is stationary / motion withheld.
+ *
+ *     This stands in for the Phase 0 single acoustic TX/RX pair,
+ *     whose only current job is stillness detection (RAT-DOC-001
+ *     Section 3.3) — not tilt or lift sensing, which are four-corner
+ *     capabilities that arrive later. The control flow in
+ *     readSensors() checks this gate FIRST: while withheld,
+ *     fuseSensorData() is not called at all (not just discarded
+ *     afterward), and the moment it transitions from held to
+ *     released, resetFusionState() zeroes the smoothing filter so
+ *     nothing leaks into the next movement cycle.
+ */
+/*
+ * MOTION_GATE_DEBOUNCE_MS:
+ *     Minimum time MOTION_GATE_PIN's raw reading must stay stable
+ *     before a state change is accepted. Buttons A/B already get this
+ *     protection via the Buttons class debounce state machine;
+ *     MOTION_GATE_PIN was previously read with a bare digitalRead()
+ *     every cycle with no debounce at all -- a brief noise glitch or
+ *     marginal breadboard contact could register as a false "held"
+ *     for long enough to produce real (if brief) unintended motion,
+ *     even though the throttled status print might never catch it.
+ */
+#define MOTION_GATE_DEBOUNCE_MS  25
+/*
+ * GATE_OPEN_SETTLE_MS:
+ *     After MOTION_GATE_PIN transitions to held, fuseSensorData() is
+ *     still not called for this many additional milliseconds. Added
+ *     after bench testing showed a large cursor jump at the exact
+ *     moment of pressing the gate switch, even with the board
+ *     completely undisturbed beforehand -- the switch itself (mounted
+ *     on the same breadboard as the IMU) produces a real mechanical
+ *     snap-action vibration on actuation, which the accelerometer
+ *     picks up as a genuine, large, brief acceleration spike right as
+ *     the gate opens. This settle window lets that decay before
+ *     integration starts trusting the data. Distinct from
+ *     MOTION_GATE_DEBOUNCE_MS (which filters the digital pin read) --
+ *     this filters analog sensor settling time after a real mechanical
+ *     event.
+ */
+#define GATE_OPEN_SETTLE_MS      150
+#define MOTION_GATE_PIN         4
 
 /*
  * ---------------------------------------------------------

@@ -6,25 +6,21 @@
 
 #include "config.h"
 #include "imu_lsm6dsv16x.h"
-#include "piezo_strip.h"
 #include "sensor_fusion.h"
 #include "buttons.h"          // --- BUTTON SUBSYSTEM ---
 
 IMU lsm6dsv16x;
-PiezoStrip piezoStrip(PIEZO_INPUT_PIN);
 
 float accelXg = 0.0f, accelYg = 0.0f, accelZg = 0.0f;
 float gyroXdps = 0.0f, gyroYdps = 0.0f, gyroZdps = 0.0f;
-uint16_t piezoRawValue = 0;
-float piezoMagnitude = 0.0f;
 uint8_t imuMlResult = 0;
 bool imuMlValid = false;
 bool imuQvarContact = false;
 bool imuQvarValid = false;
+bool debouncedGateHeld = false;  // debounced MOTION_GATE_PIN state, maintained in readSensors()
 FusedMotion fusedMotion = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false};
 
 #if SD_LOG_ENABLE
-File sdLogFile;
 bool sdCardAvailable = false;
 File driftSummaryFile;
 bool driftSummaryFileReady = false;
@@ -49,14 +45,14 @@ struct DriftResult {
 };
 
 void setupHardware();
+void calibrateGyroBiasAtBoot();
 void readSensors();
 void updateHID();
 void reportStatus();
 DriftResult runDriftCharacterization(int runNumber);
 void runDriftBatch();
 #if SD_LOG_ENABLE
-bool initSdLogging();
-void logSurfaceSample();
+bool initSdCard();
 bool initDriftSummaryLog();
 void logDriftSummary(int runNumber, const DriftResult& r);
 #endif
@@ -71,8 +67,9 @@ void setup() {
   Wire.begin();
   setupHardware();
 
-  // Uncomment to run a batch of consecutive drift characterization passes at boot:
+#if RUN_DRIFT_BATCH_AT_BOOT
   runDriftBatch();
+#endif
 }
 
 void loop() {
@@ -81,7 +78,53 @@ void loop() {
   Buttons::update();        // --- BUTTON SUBSYSTEM ---
 
   updateHID();
+
+  // Periodic status print, rate-limited independent of the main loop
+  // rate (MAIN_LOOP_DELAY_MS) so the serial monitor is readable rather
+  // than flooded. reportStatus() previously only ran once at the end
+  // of setupHardware() — this is what actually makes gate/button/motion
+  // state visible live while bench testing.
+  static unsigned long lastReportMs = 0;
+  if (millis() - lastReportMs >= STATUS_REPORT_INTERVAL_MS) {
+    reportStatus();
+    lastReportMs = millis();
+  }
+
   delay(MAIN_LOOP_DELAY_MS);
+}
+
+void calibrateGyroBiasAtBoot() {
+  const int sampleCount = 64;
+  float sumGx = 0.0f;
+  float sumGy = 0.0f;
+  float sumGz = 0.0f;
+
+  for (int i = 0; i < sampleCount; ++i) {
+    int16_t rawAx = 0, rawAy = 0, rawAz = 0;
+    int16_t rawGx = 0, rawGy = 0, rawGz = 0;
+    if (!lsm6dsv16x.readAll(rawAx, rawAy, rawAz, rawGx, rawGy, rawGz)) {
+      continue;
+    }
+
+    sumGx += (float)rawGx * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+    sumGy += (float)rawGy * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+    sumGz += (float)rawGz * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+    delay(10);
+  }
+
+  SensorCalibration calibration = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  calibration.gyroBiasXDps = -sumGx / max(1, sampleCount);
+  calibration.gyroBiasYDps = -sumGy / max(1, sampleCount);
+  calibration.gyroBiasZDps = -sumGz / max(1, sampleCount);
+  setSensorCalibration(calibration);
+
+  Serial.print(F("Gyro bias calibration: X/Y/Z = "));
+  Serial.print(calibration.gyroBiasXDps, 3);
+  Serial.print(F(" / "));
+  Serial.print(calibration.gyroBiasYDps, 3);
+  Serial.print(F(" / "));
+  Serial.print(calibration.gyroBiasZDps, 3);
+  Serial.println(F(" dps"));
 }
 
 void setupHardware() {
@@ -91,8 +134,11 @@ void setupHardware() {
   } else {
     Serial.println(F("IMU initialized."));
 
+    calibrateGyroBiasAtBoot();
+
     bool qvarOk = lsm6dsv16x.configureQvar();
     bool mlOk = lsm6dsv16x.configureMl();
+
 
     if (!qvarOk) {
       Serial.println(F("IMU Qvar configuration unavailable."));
@@ -107,14 +153,11 @@ void setupHardware() {
     }
   }
 
-  piezoStrip.begin();
-  Serial.println(F("Piezo strip sensor initialized."));
-
 #if SD_LOG_ENABLE
-  if (initSdLogging()) {
-    Serial.println(F("SD logging initialized."));
+  if (initSdCard()) {
+    Serial.println(F("SD card initialized."));
   } else {
-    Serial.println(F("SD logging failed."));
+    Serial.println(F("SD card init failed."));
   }
 
   if (initDriftSummaryLog()) {
@@ -126,39 +169,157 @@ void setupHardware() {
 
   Buttons::begin();         // --- BUTTON SUBSYSTEM ---
 
+  pinMode(MOTION_GATE_PIN, INPUT_PULLUP);  // --- MOTION GATE (acoustic stand-in) ---
+
   readSensors();
   reportStatus();
 }
 
 void readSensors() {
-  if (!lsm6dsv16x.readAllPhysical(accelXg, accelYg, accelZg,
-                                   gyroXdps, gyroYdps, gyroZdps)) {
+  // Raw counts feed fuseSensorData() directly. Physical g/dps units are
+  // still derived here for reportStatus(), via a single readAll() +
+  // manual scale multiply (no second I2C transaction through
+  // readAllPhysical()).
+  int16_t rawAx = 0, rawAy = 0, rawAz = 0, rawGx = 0, rawGy = 0, rawGz = 0;
+  bool imuOk = lsm6dsv16x.readAll(rawAx, rawAy, rawAz, rawGx, rawGy, rawGz);
+
+  if (!imuOk) {
     Serial.println(F("IMU read failed."));
+  } else {
+    accelXg = (float)rawAx * LSM6DSV16X::ACCEL_SENSITIVITY_G_PER_LSB;
+    accelYg = (float)rawAy * LSM6DSV16X::ACCEL_SENSITIVITY_G_PER_LSB;
+    accelZg = (float)rawAz * LSM6DSV16X::ACCEL_SENSITIVITY_G_PER_LSB;
+    gyroXdps = (float)rawGx * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+    gyroYdps = (float)rawGy * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+    gyroZdps = (float)rawGz * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
   }
 
   imuQvarValid = lsm6dsv16x.readQvarState(imuQvarContact);
   imuMlValid = lsm6dsv16x.readMlState(imuMlResult);
 
-  piezoRawValue = piezoStrip.readRaw();
-  piezoMagnitude = piezoStrip.getMagnitude();
+  // Real measured dt for this cycle -- same class of fix already
+  // applied to the drift characterization test, now needed here too:
+  // both orientation integration (gyro) and velocity integration
+  // (residual accel) accumulate a systematic error from any gap
+  // between assumed and actual sample interval.
+  static unsigned long lastMainLoopMicros = 0;
+  unsigned long nowMicros = micros();
+  float dtSeconds = (lastMainLoopMicros == 0)
+                       ? (MAIN_LOOP_DELAY_MS / 1000.0f)
+                       : (nowMicros - lastMainLoopMicros) / 1000000.0f;
+  lastMainLoopMicros = nowMicros;
 
-#if SD_LOG_ENABLE
-  if (sdCardAvailable) {
-    logSurfaceSample();
+  // Orientation (roll/pitch) is a real physical property of the mouse
+  // and must be tracked continuously, independent of whether the
+  // acoustic gate currently permits translational motion -- otherwise
+  // the first gravity-compensated sample after a gate opens would be
+  // working from stale tilt data.
+  if (dtSeconds <= 0.0f) {
+    dtSeconds = (MAIN_LOOP_DELAY_MS / 1000.0f);
   }
-#endif
 
-  if (imuQvarValid && !imuQvarContact) {
+  if (imuOk) {
+    updateOrientation(rawAx, rawAy, rawAz, rawGx, rawGy, dtSeconds);
+  }
+
+  float axG = (float)rawAx * LSM6DSV16X::ACCEL_SENSITIVITY_G_PER_LSB;
+  float ayG = (float)rawAy * LSM6DSV16X::ACCEL_SENSITIVITY_G_PER_LSB;
+  float gxDps = (float)rawGx * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+  float gyDps = (float)rawGy * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+
+  axG -= g_sensorCalibration.accelBiasXg;
+  ayG -= g_sensorCalibration.accelBiasYg;
+  gxDps -= g_sensorCalibration.gyroBiasXDps;
+  gyDps -= g_sensorCalibration.gyroBiasYDps;
+
+  float gravityX = -sinf(pitchRad);
+  float gravityY = cosf(pitchRad) * sinf(rollRad);
+  float residualAxG = axG - gravityX;
+  float residualAyG = ayG - gravityY;
+  float gyroMagDps = sqrtf(gxDps * gxDps + gyDps * gyDps);
+
+  // --- ACOUSTIC STILLNESS GATE (single-pair stand-in, MOTION_GATE_PIN) ---
+  // Checked FIRST and authoritative. While withheld, fuseSensorData()
+  // is not called at all — the mouse simply produces no motion, full
+  // stop, not "IMU said something but we discarded it." The instant
+  // the gate transitions from held to released, resetFusionState()
+  // zeroes the smoothing filter so residual motion from just before
+  // the stop can't leak into the next held cycle.
+  //
+  // Debounced: raw pin state must stay stable for
+  // MOTION_GATE_DEBOUNCE_MS before a change is accepted, matching the
+  // protection Buttons A/B already get. Without this, a brief noise
+  // glitch or marginal breadboard contact could register as a false
+  // "held" long enough to produce real, if brief, unintended motion —
+  // exactly the kind of thing that could show up as unexplained drift
+  // while genuinely not touching the switch.
+  static bool motionGateHeldPrev = false;
+  static bool lastRawGateHeld = false;
+  static unsigned long lastGateChangeMs = 0;
+
+  bool rawGateHeld = (digitalRead(MOTION_GATE_PIN) == LOW);
+  unsigned long nowMs = millis();
+  if (rawGateHeld != lastRawGateHeld) {
+    lastGateChangeMs = nowMs;
+    lastRawGateHeld = rawGateHeld;
+  }
+  if ((nowMs - lastGateChangeMs) >= MOTION_GATE_DEBOUNCE_MS) {
+    debouncedGateHeld = rawGateHeld;
+  }
+  bool motionGateHeld = debouncedGateHeld;
+
+  static bool motionGateReady = false;
+  static unsigned long motionGateOpenStartMs = 0;
+
+  updateMotionState(motionGateHeld, residualAxG, residualAyG, gyroMagDps, dtSeconds);
+  MotionState motionState = getMotionState();
+
+  if (motionGateHeld) {
+    if (!motionGateReady) {
+      if (motionGateHeldPrev) {
+        motionGateReady = false;
+      } else {
+        motionGateOpenStartMs = nowMs;
+      }
+
+      if ((nowMs - motionGateOpenStartMs) >= GATE_OPEN_SETTLE_MS) {
+        motionGateReady = true;
+      }
+    }
+
+    bool allowMotion = motionGateReady && (motionState == MotionState::Active || motionState == MotionState::Settling);
+
+    if (allowMotion && imuOk) {
+      fuseSensorData(rawAx, rawAy, rawGx, rawGy, dtSeconds, fusedMotion);
+    } else {
+      fusedMotion.dx = 0.0f;
+      fusedMotion.dy = 0.0f;
+    }
+    fusedMotion.atRest = (motionState == MotionState::Still || motionState == MotionState::Idle);
+
+    // Existing qvar/ML contact checks still apply as an additional
+    // override on top of the acoustic gate (e.g. mouse lifted mid-move).
+    if (imuQvarValid && !imuQvarContact) {
+      fusedMotion.dx = 0.0f;
+      fusedMotion.dy = 0.0f;
+      fusedMotion.atRest = true;
+    }
+    if (imuMlValid && imuMlResult == 0) {
+      fusedMotion.dx = 0.0f;
+      fusedMotion.dy = 0.0f;
+      fusedMotion.atRest = true;
+    }
+  } else {
+    if (motionGateHeldPrev) {
+      resetFusionState();
+    }
+    motionGateReady = false;
     fusedMotion.dx = 0.0f;
     fusedMotion.dy = 0.0f;
     fusedMotion.atRest = true;
   }
 
-  if (imuMlValid && imuMlResult == 0) {
-    fusedMotion.dx = 0.0f;
-    fusedMotion.dy = 0.0f;
-    fusedMotion.atRest = true;
-  }
+  motionGateHeldPrev = motionGateHeld;
 }
 
 void updateHID() {
@@ -167,7 +328,7 @@ void updateHID() {
   int16_t yMove = (int16_t)constrain((int32_t)roundf(fusedMotion.dy), -12, 12);
 
   if (xMove != 0 || yMove != 0) {
-    usb_mouse_move((int8_t)xMove, (int8_t)yMove, 0, 0);
+    Mouse.move((int8_t)xMove, (int8_t)yMove, 0);
   }
 
   // --- BUTTON SUBSYSTEM: HID OUTPUT ---
@@ -175,15 +336,15 @@ void updateHID() {
   ButtonEvent bEvent = Buttons::getEvent(ButtonId::B);
 
   if (aEvent == ButtonEvent::Pressed) {
-    usb_mouse_press(MOUSE_LEFT);
+    Mouse.press(MOUSE_LEFT);
   } else if (aEvent == ButtonEvent::Released) {
-    usb_mouse_release(MOUSE_LEFT);
+    Mouse.release(MOUSE_LEFT);
   }
 
   if (bEvent == ButtonEvent::Pressed) {
-    usb_mouse_press(MOUSE_RIGHT);
+    Mouse.press(MOUSE_RIGHT);
   } else if (bEvent == ButtonEvent::Released) {
-    usb_mouse_release(MOUSE_RIGHT);
+    Mouse.release(MOUSE_RIGHT);
   }
 #endif
 }
@@ -203,14 +364,29 @@ void reportStatus() {
   Serial.print(F(" / "));
   Serial.println(gyroZdps, 5);
 
-  Serial.print(F("Piezo raw: "));
-  Serial.print(piezoRawValue);
-  Serial.print(F(", magnitude: "));
-  Serial.print(piezoMagnitude);
-  Serial.print(F(", texture: "));
+  Serial.print(F("Surface tilt: "));
   Serial.print(fusedMotion.surfaceTilt);
   Serial.print(F(", atRest: "));
   Serial.print(fusedMotion.atRest ? F("yes") : F("no"));
+  Serial.print(F(", fused dx/dy: "));
+  Serial.print(fusedMotion.dx, 4);
+  Serial.print(F(" / "));
+  Serial.print(fusedMotion.dy, 4);
+
+  {
+    float dbgResAx, dbgResAy;
+    int dbgStillCount;
+    bool dbgGyroStill;
+    getFusionDebugState(dbgResAx, dbgResAy, dbgStillCount, dbgGyroStill);
+    Serial.print(F(", residual ax/ay: "));
+    Serial.print(dbgResAx, 4);
+    Serial.print(F(" / "));
+    Serial.print(dbgResAy, 4);
+    Serial.print(F(", gyroStill: "));
+    Serial.print(dbgGyroStill ? F("yes") : F("no"));
+    Serial.print(F(", stillCount: "));
+    Serial.print(dbgStillCount);
+  }
 
   Serial.print(F(" IMU Qvar: "));
   if (imuQvarValid) {
@@ -225,6 +401,9 @@ void reportStatus() {
   } else {
     Serial.print(F("unknown"));
   }
+
+  Serial.print(F(" Motion gate: "));
+  Serial.print(debouncedGateHeld ? F("permitted") : F("withheld"));
 
   Serial.println();
 }
@@ -398,7 +577,7 @@ DriftResult runDriftCharacterization(int runNumber) {
 }
 
 #if SD_LOG_ENABLE
-bool initSdLogging() {
+bool initSdCard() {
 #ifdef BUILTIN_SDCARD
   const int sdCsPin = BUILTIN_SDCARD;
 #else
@@ -410,53 +589,7 @@ bool initSdLogging() {
   }
 
   sdCardAvailable = true;
-  sdLogFile = SD.open(SD_LOG_FILE_NAME, FILE_WRITE);
-  if (!sdLogFile) {
-    sdCardAvailable = false;
-    return false;
-  }
-
-  if (sdLogFile.size() == 0) {
-    sdLogFile.println(F("timestamp_ms,piezo_raw,piezo_magnitude,accel_x_g,accel_y_g,accel_z_g,gyro_x_dps,gyro_y_dps,gyro_z_dps,qvar_contact,ml_result"));
-  }
-
-  sdLogFile.flush();
   return true;
-}
-
-void logSurfaceSample() {
-  if (!sdCardAvailable) {
-    return;
-  }
-
-  if (!sdLogFile) {
-    sdCardAvailable = false;
-    return;
-  }
-
-  sdLogFile.print(millis());
-  sdLogFile.print(',');
-  sdLogFile.print(piezoRawValue);
-  sdLogFile.print(',');
-  sdLogFile.print(piezoMagnitude);
-  sdLogFile.print(',');
-  sdLogFile.print(accelXg, 5);
-  sdLogFile.print(',');
-  sdLogFile.print(accelYg, 5);
-  sdLogFile.print(',');
-  sdLogFile.print(accelZg, 5);
-  sdLogFile.print(',');
-  sdLogFile.print(gyroXdps, 5);
-  sdLogFile.print(',');
-  sdLogFile.print(gyroYdps, 5);
-  sdLogFile.print(',');
-  sdLogFile.print(gyroZdps, 5);
-  sdLogFile.print(',');
-  sdLogFile.print(imuQvarValid ? (imuQvarContact ? 1 : 0) : 0);
-  sdLogFile.print(',');
-  sdLogFile.println(imuMlValid ? imuMlResult : 255);
-
-  sdLogFile.flush();
 }
 
 bool initDriftSummaryLog() {
