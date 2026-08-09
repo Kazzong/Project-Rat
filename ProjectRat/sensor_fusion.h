@@ -52,6 +52,10 @@ void updateOrientation(int16_t accelX, int16_t accelY, int16_t accelZ,
                         int16_t gyroX, int16_t gyroY,
                         float dtSeconds);
 
+// Returns the current X/Y gravity reference derived from the private
+// roll/pitch orientation estimate.
+void getGravityReference(float& outGravityX, float& outGravityY);
+
 // Runs one motion-fusion step using this cycle's raw accel/gyro X/Y
 // counts and the orientation state already maintained by
 // updateOrientation(). Subtracts the gravity component (via current

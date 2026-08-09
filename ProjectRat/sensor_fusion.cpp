@@ -225,6 +225,11 @@ void updateOrientation(int16_t accelX, int16_t accelY, int16_t accelZ,
   pitchRad = ORIENTATION_COMP_ALPHA * pitchGyro + (1.0f - ORIENTATION_COMP_ALPHA) * pitchAcc;
 }
 
+void getGravityReference(float& outGravityX, float& outGravityY) {
+  outGravityX = -sinf(pitchRad);
+  outGravityY = cosf(pitchRad) * sinf(rollRad);
+}
+
 void fuseSensorData(int16_t accelX, int16_t accelY,
                     int16_t gyroX, int16_t gyroY,
                     float dtSeconds,

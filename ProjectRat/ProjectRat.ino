@@ -232,8 +232,9 @@ void readSensors() {
   gxDps -= g_sensorCalibration.gyroBiasXDps;
   gyDps -= g_sensorCalibration.gyroBiasYDps;
 
-  float gravityX = -sinf(pitchRad);
-  float gravityY = cosf(pitchRad) * sinf(rollRad);
+  float gravityX = 0.0f;
+  float gravityY = 0.0f;
+  getGravityReference(gravityX, gravityY);
   float residualAxG = axG - gravityX;
   float residualAyG = ayG - gravityY;
   float gyroMagDps = sqrtf(gxDps * gxDps + gyDps * gyDps);
