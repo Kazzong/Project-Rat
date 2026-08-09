@@ -226,11 +226,13 @@ void readSensors() {
   float ayG = (float)rawAy * LSM6DSV16X::ACCEL_SENSITIVITY_G_PER_LSB;
   float gxDps = (float)rawGx * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
   float gyDps = (float)rawGy * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
+  SensorCalibration calibration;
+  getSensorCalibration(calibration);
 
-  axG -= g_sensorCalibration.accelBiasXg;
-  ayG -= g_sensorCalibration.accelBiasYg;
-  gxDps -= g_sensorCalibration.gyroBiasXDps;
-  gyDps -= g_sensorCalibration.gyroBiasYDps;
+  axG -= calibration.accelBiasXg;
+  ayG -= calibration.accelBiasYg;
+  gxDps -= calibration.gyroBiasXDps;
+  gyDps -= calibration.gyroBiasYDps;
 
   float gravityX = 0.0f;
   float gravityY = 0.0f;

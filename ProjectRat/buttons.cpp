@@ -12,21 +12,6 @@ static ButtonState g_buttonB;
 
 /*
  * ---------------------------------------------------------
- * Helper: map ButtonId → GPIO pin
- * ---------------------------------------------------------
- * Keeps pin assignments centralized and avoids scattering
- * pin numbers throughout the code.
- */
-static uint8_t buttonIdToPin(ButtonId id) {
-  switch (id) {
-    case ButtonId::A: return BUTTON_A_PIN;
-    case ButtonId::B: return BUTTON_B_PIN;
-    default:          return BUTTON_A_PIN; // fallback
-  }
-}
-
-/*
- * ---------------------------------------------------------
  * Buttons::begin()
  * ---------------------------------------------------------
  * Initializes GPIO pins and seeds the internal state

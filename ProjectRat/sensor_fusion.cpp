@@ -117,6 +117,10 @@ void setSensorCalibration(const SensorCalibration& calibration) {
   g_sensorCalibration = calibration;
 }
 
+void getSensorCalibration(SensorCalibration& outCalibration) {
+  outCalibration = g_sensorCalibration;
+}
+
 void zeroSensorCalibration() {
   g_sensorCalibration = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 }

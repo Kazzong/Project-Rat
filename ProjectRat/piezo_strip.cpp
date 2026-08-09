@@ -1,6 +1,8 @@
 #include "piezo_strip.h"
 #include "config.h"
 
+static const float PIEZO_BASELINE_ALPHA = 0.01f;
+
 PiezoStrip::PiezoStrip(uint8_t analogPin)
     : _analogPin(analogPin), _lastRaw(0), _baseline(512.0f) {}
 

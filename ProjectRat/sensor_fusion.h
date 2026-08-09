@@ -43,6 +43,7 @@ struct SensorCalibration {
 // reintroduces the same systematic timing error already fixed in the
 // drift characterization test.
 void setSensorCalibration(const SensorCalibration& calibration);
+void getSensorCalibration(SensorCalibration& outCalibration);
 void zeroSensorCalibration();
 void updateMotionState(bool gateHeld, float residualAxG, float residualAyG,
                       float gyroMagDps, float dtSeconds);
