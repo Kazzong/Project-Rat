@@ -57,6 +57,21 @@ bool initDriftSummaryLog();
 void logDriftSummary(int runNumber, const DriftResult& r);
 #endif
 
+void remapImuAxes(int16_t& accelX, int16_t& accelY, int16_t& accelZ,
+                  int16_t& gyroX, int16_t& gyroY, int16_t& gyroZ) {
+#if IMU_ROTATED_CW_90
+  int16_t sensorAccelX = accelX;
+  int16_t sensorAccelY = accelY;
+  int16_t sensorGyroX = gyroX;
+  int16_t sensorGyroY = gyroY;
+
+  accelX = sensorAccelY;
+  accelY = -sensorAccelX;
+  gyroX = sensorGyroY;
+  gyroY = -sensorGyroX;
+#endif
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial) {
@@ -106,6 +121,8 @@ void calibrateGyroBiasAtBoot() {
       continue;
     }
 
+    remapImuAxes(rawAx, rawAy, rawAz, rawGx, rawGy, rawGz);
+
     sumGx += (float)rawGx * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
     sumGy += (float)rawGy * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
     sumGz += (float)rawGz * LSM6DSV16X::GYRO_SENSITIVITY_DPS_PER_LSB;
@@ -113,9 +130,9 @@ void calibrateGyroBiasAtBoot() {
   }
 
   SensorCalibration calibration = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-  calibration.gyroBiasXDps = -sumGx / max(1, sampleCount);
-  calibration.gyroBiasYDps = -sumGy / max(1, sampleCount);
-  calibration.gyroBiasZDps = -sumGz / max(1, sampleCount);
+  calibration.gyroBiasXDps = sumGx / max(1, sampleCount);
+  calibration.gyroBiasYDps = sumGy / max(1, sampleCount);
+  calibration.gyroBiasZDps = sumGz / max(1, sampleCount);
   setSensorCalibration(calibration);
 
   Serial.print(F("Gyro bias calibration: X/Y/Z = "));
@@ -182,6 +199,10 @@ void readSensors() {
   // readAllPhysical()).
   int16_t rawAx = 0, rawAy = 0, rawAz = 0, rawGx = 0, rawGy = 0, rawGz = 0;
   bool imuOk = lsm6dsv16x.readAll(rawAx, rawAy, rawAz, rawGx, rawGy, rawGz);
+
+  if (imuOk) {
+    remapImuAxes(rawAx, rawAy, rawAz, rawGx, rawGy, rawGz);
+  }
 
   if (!imuOk) {
     Serial.println(F("IMU read failed."));
@@ -290,7 +311,13 @@ void readSensors() {
       }
     }
 
-    bool allowMotion = motionGateReady && (motionState == MotionState::Active || motionState == MotionState::Settling);
+    // Still is a valid gated operating state: smooth or slow lateral motion
+    // can fall below the FSM's entry threshold for a cycle. Only Idle and
+    // Settling suppress fusion; the fusion deadzone and ZVU handle genuine
+    // rest without turning it into a hard movement lock.
+    bool allowMotion = motionGateReady &&
+               (motionState == MotionState::Active ||
+              motionState == MotionState::Still);
 
     if (allowMotion && imuOk) {
       fuseSensorData(rawAx, rawAy, rawGx, rawGy, dtSeconds, fusedMotion);

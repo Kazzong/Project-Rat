@@ -65,7 +65,7 @@ static const float OUTPUT_SCALE = 4000.0f;
 // subtraction) accel bias measured in the 50-run stationary drift
 // dataset (~0.018g on X) -- it has not been directly measured against
 // the actual post-subtraction residual in this pipeline. TUNE ON BENCH.
-static const float RESIDUAL_ACCEL_DEADZONE = 0.02f;
+static const float RESIDUAL_ACCEL_DEADZONE = 0.008f;
 
 // In-motion Zero-Velocity-Update (ZVU) thresholds, per ST DT0106's
 // criterion: "when the modulus of acceleration is 1g [i.e. residual
@@ -76,7 +76,7 @@ static const float RESIDUAL_ACCEL_DEADZONE = 0.02f;
 // drift/erratic shifts during real sustained holds, since it doesn't
 // wait for the gate to release. TUNE ON BENCH.
 static const float STILLNESS_GYRO_THRESHOLD_DPS = 5.0f;
-static const int STILLNESS_HOLD_SAMPLES = 5;  // consecutive still cycles required (~100ms at 20ms/cycle)
+static const int STILLNESS_HOLD_SAMPLES = 10;  // consecutive still cycles required (~200ms at 20ms/cycle)
 static int stillnessCounter = 0;
 
 // Low-pass filtered residual acceleration. This smooths the short-lived
@@ -142,13 +142,15 @@ void updateMotionState(bool gateHeld, float residualAxG, float residualAyG,
                       float gyroMagDps, float dtSeconds) {
   static float moveEntryThresholdG = 0.05f;
   static float moveExitThresholdG = 0.025f;
-  static float stillEntryGyroDps = 8.0f;
-  static float stillExitGyroDps = 5.0f;
+  static float rotationEntryGyroDps = 8.0f;
+  static float rotationExitGyroDps = 5.0f;
   static float settleElapsedSeconds = 0.0f;
 
   float residualMagG = sqrtf(residualAxG * residualAxG + residualAyG * residualAyG);
-  bool isMotionActive = (residualMagG > moveEntryThresholdG) || (gyroMagDps > stillEntryGyroDps);
-  bool isMotionStopped = (residualMagG < moveExitThresholdG) && (gyroMagDps < stillExitGyroDps);
+  bool isLateralMotion = residualMagG > moveEntryThresholdG;
+  bool isRotating = gyroMagDps > rotationEntryGyroDps;
+  bool isMotionStopped = (residualMagG < moveExitThresholdG) &&
+                         (gyroMagDps < rotationExitGyroDps);
 
   if (!gateHeld) {
     g_motionState = MotionState::Idle;
@@ -158,7 +160,7 @@ void updateMotionState(bool gateHeld, float residualAxG, float residualAyG,
 
   switch (g_motionState) {
     case MotionState::Idle:
-      if (isMotionActive) {
+      if (isLateralMotion || isRotating) {
         g_motionState = MotionState::Settling;
         settleElapsedSeconds = 0.0f;
       } else {
@@ -168,7 +170,7 @@ void updateMotionState(bool gateHeld, float residualAxG, float residualAyG,
 
     case MotionState::Settling:
       settleElapsedSeconds += dtSeconds;
-      if (settleElapsedSeconds >= 0.12f) {
+      if (settleElapsedSeconds >= 0.12f && !isRotating && isLateralMotion) {
         g_motionState = MotionState::Active;
       } else if (isMotionStopped) {
         g_motionState = MotionState::Still;
@@ -176,13 +178,19 @@ void updateMotionState(bool gateHeld, float residualAxG, float residualAyG,
       break;
 
     case MotionState::Active:
-      if (isMotionStopped) {
+      if (isRotating) {
+        g_motionState = MotionState::Settling;
+        settleElapsedSeconds = 0.0f;
+      } else if (isMotionStopped) {
         g_motionState = MotionState::Still;
       }
       break;
 
     case MotionState::Still:
-      if (isMotionActive) {
+      if (isRotating) {
+        g_motionState = MotionState::Settling;
+        settleElapsedSeconds = 0.0f;
+      } else if (isLateralMotion) {
         g_motionState = MotionState::Active;
       }
       break;
@@ -308,7 +316,7 @@ void fuseSensorData(int16_t accelX, int16_t accelY,
   // Keep a gentle decay when the residual falls back below the valid motion
   // band so that tiny noise does not keep the integrator alive after the
   // physical movement has stopped.
-  if ((fabsf(filteredResidualAxG) < 0.015f) && (fabsf(filteredResidualAyG) < 0.015f)) {
+  if ((fabsf(filteredResidualAxG) < 0.006f) && (fabsf(filteredResidualAyG) < 0.006f)) {
     velX *= 0.25f;
     velY *= 0.25f;
   }

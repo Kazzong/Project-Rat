@@ -13,6 +13,10 @@
 #define IMU_I2C_ADDR        0x6B
 #define IMU_WHO_AM_I        0x0F
 
+// The IMU is now physically aligned with the logical mouse frame, so no
+// coordinate remap is required.
+#define IMU_ROTATED_CW_90   0
+
 /*
  * ---------------------------------------------------------
  * IMU control registers
@@ -66,15 +70,17 @@
 
 /*
  * ---------------------------------------------------------
- * Placeholder QVAR + MLC registers
+ * QVAR + MLC registers
  * ---------------------------------------------------------
- * These are stubs until the full LSM6DSV16X register map
- * for QVAR and machine-learning core is integrated.
+ * MLC result/status addresses are documented by AN5804. The MLC
+ * configuration itself still requires a generated Unico .ucf file.
  */
 #define IMU_QVAR_CTRL1      0x00
 #define IMU_QVAR_STATUS     0x00
-#define IMU_MLC_CTRL        0x00
-#define IMU_MLC_STATUS      0x00
+#define IMU_MLC1_SRC        0x70
+#define IMU_MLC_STATUS      0x15
+#define IMU_MLC_STATUS_MAINPAGE 0x4B
+#define IMU_MLC_ODR_CFG_C   0x60
 
 /*
  * ---------------------------------------------------------

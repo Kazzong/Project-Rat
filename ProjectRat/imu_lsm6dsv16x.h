@@ -4,9 +4,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-// NOTE: IMU_I2C_ADDR, IMU_WHO_AM_I, IMU_CTRL1_XL, IMU_CTRL2_G, IMU_CTRL3_C,
-// IMU_OUTX_L_G, IMU_OUT_TEMP_L, IMU_QVAR_STATUS, IMU_MLC_STATUS are defined
-// in config.h — do not redefine here.
+// NOTE: register addresses are defined in config.h — do not redefine here.
 
 class LSM6DSV16X {
 public:
@@ -35,11 +33,14 @@ public:
   static constexpr float TEMP_OFFSET_C = 25.0f;
   bool readTemperatureC(float& outTempC);
 
-  // Qvar / MLC — stubbed, not yet implemented (Phase 5 scope)
+  // Qvar / MLC. MLC result polling is wired to the documented result
+  // register; configureMl() remains disabled until a generated .ucf file
+  // supplies the trained decision-tree register sequence.
   bool configureQvar();
   bool configureMl();
   bool readQvarState(bool& contactDetected);
   bool readMlState(uint8_t& mlResult);
+  bool readMlChangeStatus(uint8_t& status);
 
 private:
   TwoWire* _wire;
